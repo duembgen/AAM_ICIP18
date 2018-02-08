@@ -1,40 +1,18 @@
 import numpy as np
-import scipy.io as sio
 import scipy
 import matplotlib.pyplot as plt
 import math
 
-IMG_SET_ID = 4 # 7
-path = "data/"
-dist_name = path + "distances_" + str(IMG_SET_ID) + ".mat"
-PSF_name  = path + "GaussStd2Color_" + str(IMG_SET_ID) + ".mat"
-PSF_NIR_name = path + "GaussStd2Nir_" + str(IMG_SET_ID) + ".mat"
-
-mat_dist = sio.loadmat(dist_name)
-mat_PSF = sio.loadmat(PSF_name)
-mat_PSF_NIR = sio.loadmat(PSF_NIR_name)
-
-distances = mat_dist['distancesCol']
-PSF       = mat_PSF['GaussStd2Color']
-PSF_NIR   = np.squeeze(mat_PSF_NIR['GaussStd2Nir'])
-PSF[:,3] = PSF_NIR
-
-assert distances.shape[0] == PSF.shape[0]
-assert distances.shape[0] == PSF_NIR.shape[0]
-print('loaded experimental data from {} distances and {} channels.'.format(*PSF.shape))
-
 ## Resample data uniformly. 
 
 from scipy.interpolate import interp1d
-
 def make_uniform(distances, PSF, method='uniform'):
 
-    distances_uniform = np.linspace(distances[0], distances[-1], num=num_samples, endpoint=True)
-
     if method == 'uniform':
-        PSF_uniform = np.empty((num_samples, num_channels))    
         num_samples = 50
         num_channels = PSF.shape[1]
+        PSF_uniform = np.empty((num_samples, num_channels))    
+        distances_uniform = np.linspace(distances[0], distances[-1], num=num_samples, endpoint=True)
         for i in range(num_channels):
             x = np.squeeze(distances)
             y = PSF[:,i]
@@ -58,53 +36,62 @@ def make_uniform(distances, PSF, method='uniform'):
 
 
 def polynomial_fitting(distances, PSF, degree=4): 
-    x = np.squeeze(0.001*distances_uniform)
-
-    polyParams = np.polyfit(x, PSF_uniform, degree).T
+    polyParams = np.polyfit(distances, PSF, degree).T
     return polyParams
 
-# In[ ]:
 
-# Finding x0, focal distance of each color channel.
-num_colors = polyParams.shape[0]
+def get_focus_distances(polyParams, bounds=None):
+    num_colors = polyParams.shape[0]
 
-x0 = np.zeros(num_colors)
-for channelIdx in range(num_colors):
-    f = np.poly1d( polyParams[channelIdx, :] )
-    result = scipy.optimize.minimize_scalar(f, bounds=(x[0], x[-1]), method='bounded')
-    x0[channelIdx] = result.x
+    x0 = np.zeros(num_colors)
+    for channelIdx in range(num_colors):
+        f = np.poly1d( polyParams[channelIdx, :] )
+        if bounds is not None:
+            result = scipy.optimize.minimize_scalar(f, bounds=bounds, method='bounded')
+        else:
+            result = scipy.optimize.minimize_scalar(f)
+        x0[channelIdx] = result.x
+    return x0
 
-print(x0)
-
-
-# Compute c_ij & d_ij
-if __name__ == "__main__":
+def compute_aam(polyParams, x0, alphaList):
+    num_colors, degree = polyParams.shape
+    degree -= 1
+    print('evaluating {} colors'.format(num_colors))
+    print('degree: {}'.format(degree))
+    AAM = np.zeros(len(alphaList))
 
     num_pairs = int(0.5*num_colors*(num_colors-1))
     c_ij = np.zeros((num_pairs, degree+1))
     d = np.zeros((num_pairs, 2*degree+1))
-    duo = 0 #corresponds to ij pairs in vectorized form
+    counter = 0 #corresponds to ij pairs in vectorized form
     for i in range(num_colors):
         for j in range(i+1,num_colors):
             polydiff = polyParams[i, :] - polyParams[j, :]
-            dtest = np.polymul(polydiff, polydiff)
-            #c_ij[duo, :] = polyParams[i, :] - polyParams[j, :]
-            #for k in range(2*degree+1):
-            #    d[duo, k] = 0
-            #    for u in range(degree+1):
-            #        for v in range(degree+1):
-            #            if u+v == k:
-            #                d[duo, k] += c_ij[duo, u] * c_ij[duo, v]
-            #print(d[duo] - dtest)
-            d[duo] = dtest
-            duo += 1
+            d[counter] = np.polymul(polydiff, polydiff)
+            counter += 1
 
-# In[ ]:
+    for alphaIdx, alpha in enumerate(alphaList):
+        counter = 0 #corresponds to ij pairs in vectorized form
+        for i in range(num_colors):
+            for j in range(i+1,num_colors):
+                a_ij = (1 - alpha) * min(x0[i], x0[j])
+                b_ij = (1 + alpha) * max(x0[i], x0[j])
+
+                delta = 0
+                for k in range(1, 2*degree+1+1):
+                    delta += d[counter, k-1] * (b_ij**k - a_ij**k) / k
+
+                AAM[alphaIdx] += 1.0 / (b_ij - a_ij) * delta
+                counter += 1
+
+    AAM /= num_pairs
+    return AAM
+
+
+if __name__ == "__main__":
 
 
 # Compute the AAM for varying alpha
-    alphaLIST = np.linspace(0.2, 0.5, 50)
-    AAM = np.zeros(len(alphaLIST))
 
 # B_ij  RG   RB   Rnum_colors   GB   Gnum_colors   Bnum_colors
     B_ijs = [0.2, 0.3, 0.4, 0.2, 0.5, 0.6]
@@ -116,31 +103,12 @@ if __name__ == "__main__":
 
 #def compute_AAM(alpha, )
 
-    for alphaIdx, alpha in enumerate(alphaLIST):
-        # Computing delta_alpha bar
-        duo = 0 #corresponds to ij pairs in vectorized form
-        for i in range(num_colors):
-            for j in range(i+1,num_colors):
-                a_ij = (1 - alpha) * min(x0[i], x0[j])
-                b_ij = (1 + alpha) * max(x0[i], x0[j])
-
-                B_ij = B_ijs[duo] 
-                #B_ij = max(bandwidths[i,1], bandwidths[j,1]) - min(bandwidths[i,0], bandwidths[j,0])
-                delta = 0
-                for k in range(1, 2*degree+1+1):
-                    delta += d[duo, k-1] * (b_ij**k - a_ij**k) / k
-
-                AAM[alphaIdx] += B_ij / (b_ij - a_ij) * delta
-                duo += 1
-
-    AAM /= num_pairs
-
-    plt.plot(alphaLIST, AAM, 'r^', label="y reconst")
+    plt.plot(alphaList, AAM, 'r^', label="y reconst")
     plt.ylabel('AAM')
     plt.xlabel('alpha')
     plt.show()
 
     indices = [0, 25, 49]
-    print([alphaLIST[0], AAM[0]])
-    print([alphaLIST[25], AAM[25]])
-    print([alphaLIST[49], AAM[49]])
+    print([alphaList[0], AAM[0]])
+    print([alphaList[25], AAM[25]])
+    print([alphaList[49], AAM[49]])
