@@ -61,8 +61,6 @@ def get_focus_distances(polyParams, bounds=None):
 def compute_aam(polyParams, x0, alphaList):
     num_colors, degree = polyParams.shape
     degree -= 1
-    print('evaluating {} colors'.format(num_colors))
-    print('degree: {}'.format(degree))
     AAM = np.zeros(len(alphaList))
 
     num_pairs = int(0.5*num_colors*(num_colors-1))
