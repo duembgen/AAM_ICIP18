@@ -1,5 +1,7 @@
 clc; clearvars; close all;
 
+addpath('../data');
+
 %% Read the mat files
 distances_4 = load('distances_4.mat');
 distances_4 = distances_4.distancesCol;
@@ -48,5 +50,3 @@ ylim([0 70]); set(gca,'FontSize',16);
 
 xlabel('Distance (mm)', 'FontSize', 20);
 ylabel('PSF standard deviation (pixels)', 'FontSize', 20);
-
-

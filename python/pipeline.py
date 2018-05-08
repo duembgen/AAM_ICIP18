@@ -8,11 +8,11 @@ SCALING = 100
 NUM_ALPHAS = 51
 
 def pipeline(IMG_SET_ID, scale=1e-5, num_colors=4, degree=5):
-    path = "data/"
+    path = "../data/"
     dist_name = path + "distances_" + str(IMG_SET_ID) + ".mat"
     PSF_name  = path + "GaussStd2Color_" + str(IMG_SET_ID) + ".mat"
     PSF_NIR_name = path + "GaussStd2Nir_" + str(IMG_SET_ID) + ".mat"
-
+    
     mat_dist = sio.loadmat(dist_name)
     mat_PSF = sio.loadmat(PSF_name)
     mat_PSF_NIR = sio.loadmat(PSF_NIR_name)
