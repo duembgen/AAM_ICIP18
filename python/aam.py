@@ -1,14 +1,15 @@
 import numpy as np
-import scipy
+from scipy.interpolate import interp1d
+from scipy.optimize import minimize_scalar
 import matplotlib.pyplot as plt
 import math
 
-## Resample data uniformly.
-
-from scipy.interpolate import interp1d
+SCALING = 100
 
 
 def make_uniform(distances, PSF, method='uniform'):
+    ''' Return approximately uniformly sampled version of PSF vs. distance function. 
+    '''
     if method == 'uniform':
         num_samples = 50
         num_channels = PSF.shape[1]
@@ -20,10 +21,10 @@ def make_uniform(distances, PSF, method='uniform'):
             y = PSF[:, i]
             f = interp1d(x, y, kind='cubic')
             PSF_uniform[:, i] = f(distances_uniform)
-
     elif method == 'manual':
         INDICES_4 = np.array([-1, 0, 1, 2, 3, 4, 5, 6, 7, 9, 13, 17, 19, 20, 21, 22,
-                              23, 24, 25, 27, 31, 35, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49])
+                              23, 24, 25, 27, 31, 35, 37, 38, 39, 40, 41, 42, 43, 44,
+                              45, 46, 47, 48, 49])
         INDICES_4 += 1
         PSF_uniform = np.zeros((len(INDICES_4), 4))
         distances_uniform = np.zeros((len(INDICES_4), 1))
@@ -31,7 +32,6 @@ def make_uniform(distances, PSF, method='uniform'):
         for idx in range(len(INDICES_4)):
             PSF_uniform[idx, :] = PSF[INDICES_4[idx], :]
             distances_uniform[idx] = distances[INDICES_4[idx]]
-
     else:
         raise NotImplementedError('Unknown method', method)
 
@@ -39,26 +39,39 @@ def make_uniform(distances, PSF, method='uniform'):
 
 
 def polynomial_fitting(distances, PSF, degree=4):
+    ''' Fit polynomial of certain degree to PSF vs. distance function (Eq. 6).
+    '''
     polyParams = np.polyfit(distances, PSF, degree).T
     return polyParams
 
 
 def get_focus_distances(polyParams, bounds=None):
+    ''' Find focus distance, minimizing the PSF radius (Eq. 10).
+    '''
     num_colors = polyParams.shape[0]
 
     x0 = np.zeros(num_colors)
     for channelIdx in range(num_colors):
         f = np.poly1d(polyParams[channelIdx, :])
         if bounds is not None:
-            result = scipy.optimize.minimize_scalar(
+            result = minimize_scalar(
                 f, bounds=bounds, method='bounded')
         else:
-            result = scipy.optimize.minimize_scalar(f)
+            result = minimize_scalar(f)
         x0[channelIdx] = result.x
     return x0
 
 
 def compute_aam(polyParams, x0, alphaList):
+    ''' Compute AAM polynomial fittings and focus distances x0 (Eq. 5).
+
+    :param polyParams: polynomial coefficients of fitting of PSF vs. distance function as returned by polynomial_fitting.
+    :param x0: focus distance, received by get_focus_distances.
+    :alphaList: list of alphas for which we want to evaluate AAM. 
+
+    :returns: the list of AAM values, in order corresponding to alphaList (Eq. 5).
+
+    '''
     num_colors, degree = polyParams.shape
     degree -= 1
     AAM = np.zeros(len(alphaList))
@@ -88,7 +101,8 @@ def compute_aam(polyParams, x0, alphaList):
                 counter += 1
 
     AAM /= num_pairs
-    return AAM
+    AAM /= SCALING
+    return np.log10(AAM)
 
 
 if __name__ == "__main__":
@@ -97,5 +111,5 @@ if __name__ == "__main__":
     B_ijs = [0.2, 0.3, 0.4, 0.2, 0.5, 0.6]
     B_ijs = [1., 1., 1., 1., 1., 1.]
     B_ijs = [0.2, 0.3, 0.2]
-    #       RG   RB   GB  
+    #       RG   RB   GB
     B_ijs = [1., 1., 1.]
